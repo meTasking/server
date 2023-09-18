@@ -1,0 +1,8 @@
+/.dockerignore
+/Dockerfile
+/venv
+/.mypy_cache/
+/.idea/
+/.vscode/
+/data/
+__pycache__/
