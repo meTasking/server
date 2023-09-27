@@ -224,6 +224,8 @@ class LogReadWithRecords(SQLModel):
     category: Optional[CategoryRead]
     records: list[RecordReadInsideLog]
 
+    # TODO: computed field - active, totalDuration, start, end
+
 
 class LogCreate(LogBase):
     pass

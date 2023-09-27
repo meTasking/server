@@ -8,7 +8,7 @@ from sqlmodel import Session, select, func, col, or_
 from metasking.db import use_session
 from metasking.model import (
     Log, LogRead, LogReadWithRecords, LogUpdateWithRecords,
-    Record,
+    Record, LogRecordUpdate,
     Task, TaskCreate, TaskRead, TaskUpdate,
     Category, CategoryCreate, CategoryRead, CategoryUpdate,
 )
@@ -42,7 +42,7 @@ def get_tasks(
 
 
 @api.post(
-    "/task/create",
+    "/task",
     response_model=TaskRead,
     responses={
         403: {"description": "Read only mode"},
@@ -62,7 +62,7 @@ def create_task(
 
 
 @api.get(
-    "/task/read/{task_id}",
+    "/task/{task_id}",
     response_model=TaskRead,
     responses={
         404: {"description": "Task not found"},
@@ -79,8 +79,8 @@ def read_task(
     return task
 
 
-@api.post(
-    "/task/update/{task_id}",
+@api.put(
+    "/task/{task_id}",
     response_model=TaskRead,
     responses={
         403: {"description": "Read only mode"},
@@ -106,8 +106,8 @@ def update_task(
     return db_task
 
 
-@api.post(
-    "/task/delete/{task_id}",
+@api.delete(
+    "/task/{task_id}",
     response_model=TaskRead,
     responses={
         403: {"description": "Read only mode"},
@@ -129,7 +129,7 @@ def delete_task(
 
 
 @api.get(
-    "/task/read/{task_id}/logs",
+    "/task/{task_id}/logs",
     response_model=list[LogRead],
     responses={
         404: {"description": "Task not found"},
@@ -166,7 +166,7 @@ def get_categories(
 
 
 @api.post(
-    "/category/create",
+    "/category",
     response_model=CategoryRead,
     responses={
         403: {"description": "Read only mode"},
@@ -186,7 +186,7 @@ def create_category(
 
 
 @api.get(
-    "/category/read/{category_id}",
+    "/category/{category_id}",
     response_model=CategoryRead,
     responses={
         404: {"description": "Category not found"},
@@ -203,8 +203,8 @@ def read_category(
     return category
 
 
-@api.post(
-    "/category/update/{category_id}",
+@api.put(
+    "/category/{category_id}",
     response_model=CategoryRead,
     responses={
         403: {"description": "Read only mode"},
@@ -230,8 +230,8 @@ def update_category(
     return db_category
 
 
-@api.post(
-    "/category/delete/{category_id}",
+@api.delete(
+    "/category/{category_id}",
     response_model=CategoryRead,
     responses={
         403: {"description": "Read only mode"},
@@ -253,7 +253,7 @@ def delete_category(
 
 
 @api.get(
-    "/category/read/{category_id}/logs",
+    "/category/{category_id}/logs",
     response_model=list[LogRead],
     responses={
         404: {"description": "Category not found"},
@@ -347,7 +347,7 @@ def start_log(
 
 
 @api.post(
-    "/log/stop/all",
+    "/log/all/stop",
     response_model=list[LogReadWithRecords],
     responses={
         403: {"description": "Read only mode"},
@@ -383,7 +383,7 @@ def stop_all_logs(
 
 
 @api.post(
-    "/log/stop/{log_id}",
+    "/log/{log_id}/stop",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -397,7 +397,19 @@ def stop_log(
     log_id: int,
 ):
     check_read_only()
-    db_log = session.get(Log, log_id)
+    if log_id < 0:
+        search_selector = select(Log) \
+            .where(col(Log.stopped).is_(False)) \
+            .join(Record, isouter=True) \
+            .group_by(Log.id) \
+            .order_by(func.max(col(Record.start)).desc()) \
+            .order_by(col(Log.id).desc()) \
+            .offset(-log_id - 1) \
+            .limit(1)
+        search_result = session.exec(search_selector)
+        db_log = search_result.first()
+    else:
+        db_log = session.get(Log, log_id)
     if not db_log:
         raise HTTPException(status_code=404, detail="Log not found")
     if db_log.stopped:
@@ -422,7 +434,7 @@ def stop_log(
 
 
 @api.post(
-    "/log/pause/active",
+    "/log/active/pause",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -451,7 +463,7 @@ def pause_active_log(
 
 
 @api.post(
-    "/log/pause/{log_id}",
+    "/log/{log_id}/pause",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -489,7 +501,7 @@ def pause_log(
 
 
 @api.post(
-    "/log/resume/{log_id}",
+    "/log/{log_id}/resume",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -508,7 +520,19 @@ def resume_log(
     log_id: int,
 ):
     check_read_only()
-    db_log = session.get(Log, log_id)
+    if log_id < 0:
+        search_selector = select(Log) \
+            .where(col(Log.stopped).is_(False)) \
+            .join(Record, isouter=True) \
+            .group_by(Log.id) \
+            .order_by(func.max(col(Record.start)).desc()) \
+            .order_by(col(Log.id).desc()) \
+            .offset(-log_id - 1) \
+            .limit(1)
+        search_result = session.exec(search_selector)
+        db_log = search_result.first()
+    else:
+        db_log = session.get(Log, log_id)
     if not db_log:
         raise HTTPException(status_code=404, detail="Log not found")
 
@@ -547,24 +571,6 @@ def resume_log(
 
 
 @api.get(
-    "/log/read/{log_id}",
-    response_model=LogReadWithRecords,
-    responses={
-        404: {"description": "Log not found"},
-    }
-)
-def read_log(
-    *,
-    session: Session = Depends(use_session),
-    log_id: int,
-):
-    db_log = session.get(Log, log_id)
-    if not db_log:
-        raise HTTPException(status_code=404, detail="Log not found")
-    return db_log
-
-
-@api.get(
     "/log/active",
     response_model=LogReadWithRecords,
     responses={
@@ -586,8 +592,37 @@ def get_active_log(
     return db_record.log
 
 
-@api.post(
-    "/log/update/{log_id}",
+@api.get(
+    "/log/{log_id}",
+    response_model=LogReadWithRecords,
+    responses={
+        404: {"description": "Log not found"},
+    }
+)
+def read_log(
+    *,
+    session: Session = Depends(use_session),
+    log_id: int,
+):
+    if log_id < 0:
+        search_selector = select(Log) \
+            .join(Record, isouter=True) \
+            .group_by(Log.id) \
+            .order_by(func.max(col(Record.start)).desc()) \
+            .order_by(col(Log.id).desc()) \
+            .offset(-log_id - 1) \
+            .limit(1)
+        search_result = session.exec(search_selector)
+        db_log = search_result.first()
+    else:
+        db_log = session.get(Log, log_id)
+    if not db_log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    return db_log
+
+
+@api.put(
+    "/log/{log_id}",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -599,6 +634,8 @@ def update_log(
     session: Session = Depends(use_session),
     log_id: int,
     log: LogUpdateWithRecords = Body(),
+    create_category: bool = Query(False, alias="create-category"),
+    create_task: bool = Query(False, alias="create-task"),
 ):
     check_read_only()
     db_log = session.get(Log, log_id)
@@ -607,29 +644,44 @@ def update_log(
     log_data = log.dict(exclude_unset=True)
     for key, value in log_data.items():
         if key == "category":
-            selectorC = select(Category) \
-                .where(Category.name == value)
-            resultC = session.exec(selectorC)
-            db_category = resultC.first()
-            if not db_category:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Category not found"
-                )
-            db_log.category_id = db_category.id
+            if value is None:
+                db_category = None
+            else:
+                selectorC = select(Category) \
+                    .where(Category.name == value)
+                resultC = session.exec(selectorC)
+                db_category = resultC.first()
+                if not db_category:
+                    if create_category:
+                        db_category = Category(name=value)
+                    else:
+                        raise HTTPException(
+                            status_code=404,
+                            detail="Category not found"
+                        )
+            db_log.category = db_category
         elif key == "task":
-            selectorT = select(Task) \
-                .where(Task.name == value)
-            resultT = session.exec(selectorT)
-            db_task = resultT.first()
-            if not db_task:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Task not found"
-                )
-            db_log.task_id = db_task.id
+            if value is None:
+                db_task = None
+            else:
+                selectorT = select(Task) \
+                    .where(Task.name == value)
+                resultT = session.exec(selectorT)
+                db_task = resultT.first()
+                if not db_task:
+                    if create_task:
+                        db_task = Task(name=value)
+                    else:
+                        raise HTTPException(
+                            status_code=404,
+                            detail="Task not found"
+                        )
+            db_log.task = db_task
         elif key == "records":
-            for record in value:
+            for record_data in value:
+                record = LogRecordUpdate()
+                for key2, value2 in record_data.items():
+                    setattr(record, key2, value2)
                 if record.id:
                     db_record = session.get(Record, record.id)
                     if not db_record:
@@ -637,7 +689,6 @@ def update_log(
                             status_code=404,
                             detail="Record not found"
                         )
-                    record_data = record.dict(exclude_unset=True)
                     for key2, value2 in record_data.items():
                         setattr(db_record, key2, value2)
                     session.add(db_record)
@@ -653,8 +704,8 @@ def update_log(
     return db_log
 
 
-@api.post(
-    "/log/delete/{log_id}",
+@api.delete(
+    "/log/{log_id}",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -667,7 +718,18 @@ def delete_log(
     log_id: int,
 ):
     check_read_only()
-    db_log = session.get(Log, log_id)
+    if log_id < 0:
+        search_selector = select(Log) \
+            .join(Record, isouter=True) \
+            .group_by(Log.id) \
+            .order_by(func.max(col(Record.start)).desc()) \
+            .order_by(col(Log.id).desc()) \
+            .offset(-log_id - 1) \
+            .limit(1)
+        search_result = session.exec(search_selector)
+        db_log = search_result.first()
+    else:
+        db_log = session.get(Log, log_id)
     if not db_log:
         raise HTTPException(status_code=404, detail="Log not found")
     for db_record in db_log.records:
@@ -678,7 +740,7 @@ def delete_log(
 
 
 @api.post(
-    "/log/split/{log_id}",
+    "/log/{log_id}/split",
     response_model=list[LogReadWithRecords],
 )
 def split_log(
