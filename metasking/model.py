@@ -141,8 +141,16 @@ class RecordReadWithLog(RecordRead):
     log: "LogRead"
 
 
-class RecordCreate(RecordBase):
-    pass
+class RecordCreateInsideLog(SQLModel):
+    meta: Optional[dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True)
+    )
+    start: datetime.datetime = Field(
+        default_factory=datetime.datetime.now,
+        index=True
+    )
+    end: Optional[datetime.datetime] = Field(default=None, index=True)
 
 
 class RecordUpdate(SQLModel):
@@ -227,8 +235,8 @@ class LogReadWithRecords(SQLModel):
     # TODO: computed field - active, totalDuration, start, end
 
 
-class LogCreate(LogBase):
-    pass
+class LogCreateWithRecords(LogBase):
+    records: Optional[list[RecordCreateInsideLog]] = None
 
 
 class LogUpdateWithRecords(SQLModel):

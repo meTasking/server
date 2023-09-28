@@ -7,7 +7,8 @@ from sqlmodel import Session, select, func, col, or_
 
 from metasking.db import use_session
 from metasking.model import (
-    Log, LogRead, LogReadWithRecords, LogUpdateWithRecords,
+    Log, LogCreateWithRecords, LogRead,
+    LogReadWithRecords, LogUpdateWithRecords,
     Record, LogRecordUpdate,
     Task, TaskCreate, TaskRead, TaskUpdate,
     Category, CategoryCreate, CategoryRead, CategoryUpdate,
@@ -298,14 +299,16 @@ def get_logs(
     category_id: Optional[int] = None,
     task_id: Optional[int] = None,
     stopped: Optional[bool] = None,
+    since: Optional[datetime.datetime] = None,
+    until: Optional[datetime.datetime] = None,
 ):
     selector = select(Log)
-    if category_id:
+    if category_id is not None:
         db_category = session.get(Category, category_id)
         if not db_category:
             raise HTTPException(status_code=404, detail="Category not found")
         selector = selector.where(Log.category_id == category_id)
-    if task_id:
+    if task_id is not None:
         db_task = session.get(Task, task_id)
         if not db_task:
             raise HTTPException(status_code=404, detail="Task not found")
@@ -319,10 +322,41 @@ def get_logs(
         .order_by(func.max(col(Record.start)).desc()) \
         .order_by(col(Log.id).desc())
 
+    if since is not None:
+        selector = selector.where(or_(
+            col(Record.start) >= since,
+            col(Record.end) >= since,
+        ))
+    if until is not None:
+        selector = selector.where(or_(
+            col(Record.start) <= until,
+            col(Record.end) <= until,
+        ))
+
     selector = selector.offset(offset).limit(limit)
     result = session.exec(selector)
     logs = result.all()
     return logs
+
+
+@api.post(
+    "/log",
+    response_model=LogReadWithRecords,
+    responses={
+        403: {"description": "Read only mode"},
+    },
+)
+def create_log(
+    *,
+    session: Session = Depends(use_session),
+    log: LogCreateWithRecords,
+):
+    check_read_only()
+    db_log = Log.from_orm(log)
+    session.add(db_log)
+    session.commit()
+    session.refresh(db_log)
+    return db_log
 
 
 @api.post(
