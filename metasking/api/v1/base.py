@@ -382,6 +382,43 @@ def stop_all_logs(
     return db_logs
 
 
+def resume_last_paused_log(session: Session):
+    """
+    NOTE: assumes no log is currently running
+    """
+
+    search_selector = select(Log) \
+        .where(col(Log.stopped).is_(False)) \
+        .join(Record, isouter=True) \
+        .group_by(Log.id) \
+        .order_by(func.max(col(Record.start)).desc()) \
+        .order_by(col(Log.id).desc()) \
+        .offset(0) \
+        .limit(1)
+    search_result = session.exec(search_selector)
+    db_log = search_result.first()
+    if not db_log:
+        # No paused log found
+        return
+
+    # Check if record is paused (it should be, but let's make sure)
+    selector = select(Record) \
+        .where(Record.log_id == db_log.id) \
+        .order_by(col(Record.start).desc()) \
+        .limit(1)
+    result = session.exec(selector)
+    db_record = result.first()
+    if db_record and not db_record.end:
+        # This should not happen - inconsistent state
+        # Let's just ignore it for now
+        return
+
+    # Start a new record
+    session.add(Record(log_id=db_log.id))
+
+    session.commit()
+
+
 @api.post(
     "/log/{log_id}/stop",
     response_model=LogReadWithRecords,
@@ -417,18 +454,26 @@ def stop_log(
     db_log.stopped = True
     session.add(db_log)
 
+    was_active = False
+
     # Write the end time to the last record if the log is not already paused
     selector = select(Record) \
-        .where(Record.log_id == log_id) \
+        .where(Record.log_id == db_log.id) \
         .order_by(col(Record.start).desc()) \
         .limit(1)
     result = session.exec(selector)
     db_record = result.first()
     if db_record and not db_record.end:
+        was_active = True
         db_record.end = datetime.datetime.now()
         session.add(db_record)
 
     session.commit()
+
+    if was_active:
+        # Resume last paused log if any
+        resume_last_paused_log(session)
+
     session.refresh(db_log)
     return db_log
 
@@ -485,7 +530,7 @@ def pause_log(
 
     # Write the end time to the last record if the log is not already paused
     selector = select(Record) \
-        .where(Record.log_id == log_id) \
+        .where(Record.log_id == db_log.id) \
         .order_by(col(Record.start).desc()) \
         .limit(1)
     result = session.exec(selector)
@@ -547,7 +592,7 @@ def resume_log(
 
     # Check if record is paused
     selector = select(Record) \
-        .where(Record.log_id == log_id) \
+        .where(Record.log_id == db_log.id) \
         .order_by(col(Record.start).desc()) \
         .limit(1)
     result = session.exec(selector)
@@ -563,7 +608,7 @@ def resume_log(
             raise HTTPException(status_code=400, detail="Log already running")
 
     # Start a new record
-    session.add(Record(log_id=log_id))
+    session.add(Record(log_id=db_log.id))
 
     session.commit()
     session.refresh(db_log)
@@ -768,7 +813,7 @@ def split_log(
 
     # Find if any record contains the split time and split it
     selector = select(Record) \
-        .where(Record.log_id == log_id) \
+        .where(Record.log_id == db_log.id) \
         .where(Record.start < at) \
         .where(or_(col(Record.end).is_(None), col(Record.end) > at))
     result = session.exec(selector)
@@ -784,7 +829,7 @@ def split_log(
 
     # Find all records after the split time and move them to the new log
     selector = select(Record) \
-        .where(Record.log_id == log_id) \
+        .where(Record.log_id == db_log.id) \
         .where(Record.start >= at)
     result = session.exec(selector)
     for db_record in result:
