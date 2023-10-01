@@ -9,7 +9,7 @@ from metasking.db import use_session
 from metasking.model import (
     Log, LogCreateWithRecords, LogRead,
     LogReadWithRecords, LogUpdateWithRecords,
-    Record, LogRecordUpdate,
+    Record, RecordRead, RecordUpdate, LogRecordUpdate,
     Task, TaskCreate, TaskRead, TaskUpdate,
     Category, CategoryCreate, CategoryRead, CategoryUpdate,
 )
@@ -52,7 +52,7 @@ def get_tasks(
 def create_task(
     *,
     session: Session = Depends(use_session),
-    task: TaskCreate,
+    task: TaskCreate = Body(),
 ):
     check_read_only()
     db_task = Task.from_orm(task)
@@ -176,7 +176,7 @@ def get_categories(
 def create_category(
     *,
     session: Session = Depends(use_session),
-    category: CategoryCreate,
+    category: CategoryCreate = Body(),
 ):
     check_read_only()
     db_category = Category.from_orm(category)
@@ -349,7 +349,7 @@ def get_logs(
 def create_log(
     *,
     session: Session = Depends(use_session),
-    log: LogCreateWithRecords,
+    log: LogCreateWithRecords = Body(),
 ):
     check_read_only()
     db_log = Log.from_orm(log)
@@ -876,3 +876,155 @@ def split_log(
     session.refresh(db_log)
     session.refresh(db_log2)
     return [db_log, db_log2]
+
+
+@api.get(
+    "/log/{log_id}/merge/{with_log_id}",
+    response_model=LogReadWithRecords,
+    responses={
+        404: {"description": "Log not found"},
+    },
+)
+def merge_log(
+    *,
+    session: Session = Depends(use_session),
+    log_id: int,
+    with_log_id: int,
+):
+    db_log = session.get(Log, log_id)
+    if not db_log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    db_log2 = session.get(Log, with_log_id)
+    if not db_log2:
+        raise HTTPException(status_code=404, detail="Log not found")
+
+    # Move all records from the second log to the first log
+    for db_record in db_log2.records:
+        db_log.records.append(db_record)
+
+    # Merge name and description
+    if db_log.name != db_log2.name:
+        db_log.name += " + " + db_log2.name
+    if db_log.description != db_log2.description:
+        if db_log.description is None:
+            db_log.description = db_log2.description
+        elif db_log2.description is not None:
+            db_log.description += "\n\n" + db_log2.description
+
+    # Delete the second log
+    session.delete(db_log2)
+
+    session.commit()
+    session.refresh(db_log)
+    return db_log
+
+
+@api.post(
+    "/record",
+    response_model=Record,
+    responses={
+        403: {"description": "Read only mode"},
+    },
+)
+def create_record(
+    *,
+    session: Session = Depends(use_session),
+    record: RecordRead = Body(),
+):
+    check_read_only()
+    db_record = Record.from_orm(record)
+    session.add(db_record)
+    session.commit()
+    session.refresh(db_record)
+    return db_record
+
+
+@api.get(
+    "/record/{record_id}",
+    response_model=RecordRead,
+    responses={
+        404: {"description": "Record not found"},
+    },
+)
+def read_record(
+    *,
+    session: Session = Depends(use_session),
+    record_id: int,
+):
+    record = session.get(Record, record_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+    return record
+
+
+@api.put(
+    "/record/{record_id}",
+    response_model=RecordUpdate,
+    responses={
+        403: {"description": "Read only mode"},
+        404: {"description": "Record not found"},
+    },
+)
+def update_record(
+    *,
+    session: Session = Depends(use_session),
+    record_id: int,
+    record: RecordUpdate = Body(),
+):
+    check_read_only()
+    db_record = session.get(Record, record_id)
+    if not db_record:
+        raise HTTPException(status_code=404, detail="Record not found")
+    record_data = record.dict(exclude_unset=True)
+    for key, value in record_data.items():
+        setattr(db_record, key, value)
+    session.add(db_record)
+    session.commit()
+    session.refresh(db_record)
+    return db_record
+
+
+@api.delete(
+    "/record/{record_id}",
+    response_model=RecordRead,
+    responses={
+        403: {"description": "Read only mode"},
+        404: {"description": "Record not found"},
+    },
+)
+def delete_record(
+    *,
+    session: Session = Depends(use_session),
+    record_id: int,
+):
+    check_read_only()
+    db_record = session.get(Record, record_id)
+    if not db_record:
+        raise HTTPException(status_code=404, detail="Record not found")
+    session.delete(db_record)
+
+    # If the log is now empty, delete it too
+    db_log = db_record.log
+    if not db_log.records:
+        session.delete(db_log)
+
+    session.commit()
+    return db_record
+
+
+@api.get(
+    "/record/{record_id}/log",
+    response_model=LogReadWithRecords,
+    responses={
+        404: {"description": "Record not found"},
+    },
+)
+def get_record_log(
+    *,
+    session: Session = Depends(use_session),
+    record_id: int,
+):
+    record = session.get(Record, record_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+    return record.log
