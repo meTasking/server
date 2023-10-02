@@ -1,10 +1,11 @@
 # pull official base image
-FROM python:3.11.5-slim-bookworm
+FROM docker.io/library/python:3.11.5-slim-bookworm
 
 # set working directory
 WORKDIR /usr/src/app
 
 # set environment variables
+ENV TZ=Europe/Prague
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 ENV DATABASE_URL "sqlite:////data/database.db"

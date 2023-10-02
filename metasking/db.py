@@ -22,7 +22,7 @@ if DATABASE_URL is None:
 # ))
 engine = create_engine(
     DATABASE_URL, echo=True, future=True,
-    connect_args={"check_same_thread": False}
+    # connect_args={"check_same_thread": False}
 )
 
 

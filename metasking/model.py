@@ -74,7 +74,7 @@ class RecordBase(SQLModel):
     __table_args__ = (
         # Start must be before end
         CheckConstraint(
-            "end IS NULL OR start <= end",
+            '"end" IS NULL OR "start" <= "end"',
             name="start_before_end"
         ),
         # # Only one record globally can be without end

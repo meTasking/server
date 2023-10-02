@@ -353,6 +353,9 @@ def create_log(
 ):
     check_read_only()
     db_log = Log.from_orm(log)
+    for record in log.records or []:
+        db_record = Record.from_orm(record)
+        db_log.records.append(db_record)
     session.add(db_log)
     session.commit()
     session.refresh(db_log)

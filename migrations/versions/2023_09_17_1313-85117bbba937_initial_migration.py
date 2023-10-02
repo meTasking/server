@@ -76,7 +76,7 @@ def upgrade() -> None:
         sa.Column('end', sa.DateTime(), nullable=True),
         sa.Column('id', sa.Integer(), nullable=False),
         sa.CheckConstraint(
-            'end IS NULL OR start <= end',
+            '"end" IS NULL OR "start" <= "end"',
             name='start_before_end'
         ),
         sa.ForeignKeyConstraint(['log_id'], ['log.id'], ),
