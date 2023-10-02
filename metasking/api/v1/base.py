@@ -384,6 +384,37 @@ def start_log(
 
 
 @api.post(
+    "/log/next",  # Similar to /log/start but stops currently active log
+    response_model=LogReadWithRecords,
+    responses={
+        403: {"description": "Read only mode"},
+    },
+)
+def next_log(
+    *,
+    session: Session = Depends(use_session),
+):
+    check_read_only()
+    selector = select(Record) \
+        .where(col(Record.end).is_(None)) \
+        .order_by(col(Record.start).desc()) \
+        .limit(1)
+    result = session.exec(selector)
+    db_record = result.first()
+    if db_record:
+        db_record.end = datetime.datetime.now()
+        session.add(db_record)
+        db_record.log.stopped = True
+        session.add(db_record.log)
+    db_log = Log()
+    db_log.records.append(Record())
+    session.add(db_log)
+    session.commit()
+    session.refresh(db_log)
+    return db_log
+
+
+@api.post(
     "/log/all/stop",
     response_model=list[LogReadWithRecords],
     responses={
@@ -454,6 +485,45 @@ def resume_last_paused_log(session: Session):
     session.add(Record(log_id=db_log.id))
 
     session.commit()
+
+
+@api.post(
+    "/log/active/stop",
+    response_model=LogReadWithRecords,
+    responses={
+        403: {"description": "Read only mode"},
+        404: {"description": "No active log found"},
+    },
+)
+def stop_active_log(
+    *,
+    session: Session = Depends(use_session),
+):
+    check_read_only()
+    selector = select(Record) \
+        .where(col(Record.end).is_(None)) \
+        .order_by(col(Record.start).desc()) \
+        .limit(1)
+    result = session.exec(selector)
+    db_record = result.first()
+    if not db_record:
+        raise HTTPException(status_code=404, detail="No active log found")
+    db_log = db_record.log
+    assert not db_log.stopped
+    db_log.stopped = True
+    session.add(db_log)
+
+    # Write the end time to the last record if the log is not already paused
+    db_record.end = datetime.datetime.now()
+    session.add(db_record)
+
+    session.commit()
+
+    # Resume last paused log if any
+    resume_last_paused_log(session)
+
+    session.refresh(db_log)
+    return db_log
 
 
 @api.post(
