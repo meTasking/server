@@ -299,6 +299,7 @@ def get_logs(
     category_id: Optional[int] = None,
     task_id: Optional[int] = None,
     stopped: Optional[bool] = None,
+    order: str = Query("desc", regex="^(asc|desc)$"),
     since: Optional[datetime.datetime] = None,
     until: Optional[datetime.datetime] = None,
 ):
@@ -319,8 +320,13 @@ def get_logs(
     # Order by start time of the last record
     selector = selector.join(Record, isouter=True) \
         .group_by(Log.id) \
-        .order_by(func.max(col(Record.start)).desc()) \
-        .order_by(col(Log.id).desc())
+
+    if order == "desc":
+        selector = selector.order_by(func.max(col(Record.start)).desc()) \
+            .order_by(col(Log.id).desc())
+    else:
+        selector = selector.order_by(func.min(col(Record.start)).asc()) \
+            .order_by(col(Log.id).asc())
 
     if since is not None:
         selector = selector.where(or_(
