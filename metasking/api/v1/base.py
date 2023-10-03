@@ -7,11 +7,17 @@ from sqlmodel import Session, select, func, col, or_
 
 from metasking.db import use_session
 from metasking.model import (
-    Log, LogCreateWithRecords, LogRead,
+    Log, LogCreate, LogCreateWithRecords, LogRead,
     LogReadWithRecords, LogUpdateWithRecords,
-    Record, RecordRead, RecordUpdate, LogRecordUpdate,
+    Record, RecordCreate, RecordRead, RecordUpdate, LogRecordUpdate,
     Task, TaskCreate, TaskRead, TaskUpdate,
     Category, CategoryCreate, CategoryRead, CategoryUpdate,
+)
+from metasking.db import (
+    pause_all_logs,
+    resume_last_paused_log,
+    select_log_by_dynamic_id,
+    select_active_record,
 )
 # from metasking.asyncsessionfix import AsyncSession
 
@@ -275,15 +281,6 @@ def get_category_logs(
     )
 
 
-def pause_all_logs(session: Session):
-    selector = select(Record) \
-        .where(col(Record.end).is_(None))
-    result = session.exec(selector)
-    for db_record in result:
-        db_record.end = datetime.datetime.now()
-        session.add(db_record)
-
-
 @api.get(
     "/log/list",
     response_model=list[LogReadWithRecords],
@@ -378,10 +375,41 @@ def create_log(
 def start_log(
     *,
     session: Session = Depends(use_session),
+    log: LogCreate = Body(),
 ):
     check_read_only()
+
     pause_all_logs(session)
+
     db_log = Log()
+
+    log_data = log.dict(exclude_unset=True)
+    for key, value in log_data.items():
+        if key == "task":
+            selector_task = select(Task) \
+                .where(Task.name == value)
+            result_task = session.exec(selector_task)
+            db_task = result_task.first()
+            if not db_task:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Task not found"
+                )
+            db_log.task_id = db_task.id
+        elif key == "category":
+            selector_category = select(Category) \
+                .where(Category.name == value)
+            result_category = session.exec(selector_category)
+            db_category = result_category.first()
+            if not db_category:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Category not found"
+                )
+            db_log.category_id = db_category.id
+        else:
+            setattr(db_log, key, value)
+
     db_log.records.append(Record())
     session.add(db_log)
     session.commit()
@@ -401,11 +429,7 @@ def next_log(
     session: Session = Depends(use_session),
 ):
     check_read_only()
-    selector = select(Record) \
-        .where(col(Record.end).is_(None)) \
-        .order_by(col(Record.start).desc()) \
-        .limit(1)
-    result = session.exec(selector)
+    result = session.exec(select_active_record())
     db_record = result.first()
     if db_record:
         db_record.end = datetime.datetime.now()
@@ -456,43 +480,6 @@ def stop_all_logs(
     return db_logs
 
 
-def resume_last_paused_log(session: Session):
-    """
-    NOTE: assumes no log is currently running
-    """
-
-    search_selector = select(Log) \
-        .where(col(Log.stopped).is_(False)) \
-        .join(Record, isouter=True) \
-        .group_by(Log.id) \
-        .order_by(func.max(col(Record.start)).desc()) \
-        .order_by(col(Log.id).desc()) \
-        .offset(0) \
-        .limit(1)
-    search_result = session.exec(search_selector)
-    db_log = search_result.first()
-    if not db_log:
-        # No paused log found
-        return
-
-    # Check if record is paused (it should be, but let's make sure)
-    selector = select(Record) \
-        .where(Record.log_id == db_log.id) \
-        .order_by(col(Record.start).desc()) \
-        .limit(1)
-    result = session.exec(selector)
-    db_record = result.first()
-    if db_record and not db_record.end:
-        # This should not happen - inconsistent state
-        # Let's just ignore it for now
-        return
-
-    # Start a new record
-    session.add(Record(log_id=db_log.id))
-
-    session.commit()
-
-
 @api.post(
     "/log/active/stop",
     response_model=LogReadWithRecords,
@@ -533,7 +520,7 @@ def stop_active_log(
 
 
 @api.post(
-    "/log/{log_id}/stop",
+    "/log/{dynamic_log_id}/stop",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -544,24 +531,10 @@ def stop_active_log(
 def stop_log(
     *,
     session: Session = Depends(use_session),
-    log_id: int,
+    dynamic_log_id: int,
 ):
     check_read_only()
-    if log_id < 0:
-        search_selector = select(Log) \
-            .where(col(Log.stopped).is_(False)) \
-            .join(Record, isouter=True) \
-            .group_by(Log.id) \
-            .order_by(func.max(col(Record.start)).desc()) \
-            .order_by(col(Log.id).desc()) \
-            .offset(-log_id - 1) \
-            .limit(1)
-        search_result = session.exec(search_selector)
-        db_log = search_result.first()
-    else:
-        db_log = session.get(Log, log_id)
-    if not db_log:
-        raise HTTPException(status_code=404, detail="Log not found")
+    db_log = select_log_by_dynamic_id(session, dynamic_log_id)
     if db_log.stopped:
         raise HTTPException(status_code=400, detail="Log already stopped")
     db_log.stopped = True
@@ -604,11 +577,7 @@ def pause_active_log(
     session: Session = Depends(use_session),
 ):
     check_read_only()
-    selector = select(Record) \
-        .where(col(Record.end).is_(None)) \
-        .order_by(col(Record.start).desc()) \
-        .limit(1)
-    result = session.exec(selector)
+    result = session.exec(select_active_record())
     db_record = result.first()
     if not db_record:
         raise HTTPException(status_code=404, detail="No active log found")
@@ -659,7 +628,7 @@ def pause_log(
 
 
 @api.post(
-    "/log/{log_id}/resume",
+    "/log/{dynamic_log_id}/resume",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -675,24 +644,10 @@ def pause_log(
 def resume_log(
     *,
     session: Session = Depends(use_session),
-    log_id: int,
+    dynamic_log_id: int,
 ):
     check_read_only()
-    if log_id < 0:
-        search_selector = select(Log) \
-            .where(col(Log.stopped).is_(False)) \
-            .join(Record, isouter=True) \
-            .group_by(Log.id) \
-            .order_by(func.max(col(Record.start)).desc()) \
-            .order_by(col(Log.id).desc()) \
-            .offset(-log_id - 1) \
-            .limit(1)
-        search_result = session.exec(search_selector)
-        db_log = search_result.first()
-    else:
-        db_log = session.get(Log, log_id)
-    if not db_log:
-        raise HTTPException(status_code=404, detail="Log not found")
+    db_log = select_log_by_dynamic_id(session, dynamic_log_id)
 
     pause_all_logs(session)
 
@@ -739,11 +694,7 @@ def get_active_log(
     *,
     session: Session = Depends(use_session),
 ):
-    selector = select(Record) \
-        .where(col(Record.end).is_(None)) \
-        .order_by(col(Record.start).desc()) \
-        .limit(1)
-    result = session.exec(selector)
+    result = session.exec(select_active_record())
     db_record = result.first()
     if not db_record:
         raise HTTPException(status_code=404, detail="No active log found")
@@ -751,7 +702,7 @@ def get_active_log(
 
 
 @api.get(
-    "/log/{log_id}",
+    "/log/{dynamic_log_id}",
     response_model=LogReadWithRecords,
     responses={
         404: {"description": "Log not found"},
@@ -760,23 +711,9 @@ def get_active_log(
 def read_log(
     *,
     session: Session = Depends(use_session),
-    log_id: int,
+    dynamic_log_id: int,
 ):
-    if log_id < 0:
-        search_selector = select(Log) \
-            .join(Record, isouter=True) \
-            .group_by(Log.id) \
-            .order_by(func.max(col(Record.start)).desc()) \
-            .order_by(col(Log.id).desc()) \
-            .offset(-log_id - 1) \
-            .limit(1)
-        search_result = session.exec(search_selector)
-        db_log = search_result.first()
-    else:
-        db_log = session.get(Log, log_id)
-    if not db_log:
-        raise HTTPException(status_code=404, detail="Log not found")
-    return db_log
+    return select_log_by_dynamic_id(session, dynamic_log_id)
 
 
 @api.put(
@@ -863,7 +800,7 @@ def update_log(
 
 
 @api.delete(
-    "/log/{log_id}",
+    "/log/{dynamic_log_id}",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -873,23 +810,10 @@ def update_log(
 def delete_log(
     *,
     session: Session = Depends(use_session),
-    log_id: int,
+    dynamic_log_id: int,
 ):
     check_read_only()
-    if log_id < 0:
-        search_selector = select(Log) \
-            .join(Record, isouter=True) \
-            .group_by(Log.id) \
-            .order_by(func.max(col(Record.start)).desc()) \
-            .order_by(col(Log.id).desc()) \
-            .offset(-log_id - 1) \
-            .limit(1)
-        search_result = session.exec(search_selector)
-        db_log = search_result.first()
-    else:
-        db_log = session.get(Log, log_id)
-    if not db_log:
-        raise HTTPException(status_code=404, detail="Log not found")
+    db_log = select_log_by_dynamic_id(session, dynamic_log_id)
     for db_record in db_log.records:
         session.delete(db_record)
     session.delete(db_log)
@@ -898,19 +822,17 @@ def delete_log(
 
 
 @api.post(
-    "/log/{log_id}/split",
+    "/log/{dynamic_log_id}/split",
     response_model=list[LogReadWithRecords],
 )
 def split_log(
     *,
     session: Session = Depends(use_session),
-    log_id: int,
+    dynamic_log_id: int,
     at: datetime.datetime,
 ):
     check_read_only()
-    db_log = session.get(Log, log_id)
-    if not db_log:
-        raise HTTPException(status_code=404, detail="Log not found")
+    db_log = select_log_by_dynamic_id(session, dynamic_log_id)
 
     db_log2 = Log(
         category_id=db_log.category_id,
@@ -1000,7 +922,7 @@ def merge_log(
 
 @api.post(
     "/record",
-    response_model=Record,
+    response_model=RecordRead,
     responses={
         403: {"description": "Read only mode"},
     },
@@ -1008,7 +930,7 @@ def merge_log(
 def create_record(
     *,
     session: Session = Depends(use_session),
-    record: RecordRead = Body(),
+    record: RecordCreate = Body(),
 ):
     check_read_only()
     db_record = Record.from_orm(record)
@@ -1038,7 +960,7 @@ def read_record(
 
 @api.put(
     "/record/{record_id}",
-    response_model=RecordUpdate,
+    response_model=RecordRead,
     responses={
         403: {"description": "Read only mode"},
         404: {"description": "Record not found"},

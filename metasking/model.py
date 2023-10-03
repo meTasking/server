@@ -120,6 +120,10 @@ class Record(RecordBase, table=True):  # type: ignore
     log: "Log" = Relationship(back_populates="records")
 
 
+class RecordCreate(RecordBase):
+    pass
+
+
 class RecordRead(RecordBase):
     id: int
 
@@ -233,6 +237,17 @@ class LogReadWithRecords(SQLModel):
     records: list[RecordReadInsideLog]
 
     # TODO: computed field - active, totalDuration, start, end
+
+
+class LogCreate(SQLModel):
+    category: Optional[str] = None
+    task: Optional[str] = None
+    meta: Optional[dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True)
+    )
+    name: Optional[str] = None
+    description: Optional[str] = None
 
 
 class LogCreateWithRecords(LogBase):
