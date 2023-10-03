@@ -1,5 +1,5 @@
 # pull official base image
-FROM docker.io/library/python:3.11.5-slim-bookworm
+FROM docker.io/library/python:3.11.6
 
 # set working directory
 WORKDIR /usr/src/app
@@ -15,7 +15,6 @@ ENV READ_ONLY "false"
 CMD ["./docker-init.sh"]
 
 # install python dependencies
-RUN pip install --upgrade pip
 COPY ./requirements.txt .
 RUN pip install -r requirements.txt
 
