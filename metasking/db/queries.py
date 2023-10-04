@@ -5,7 +5,7 @@ from sqlmodel import Session, select, func, col
 from sqlmodel.sql.expression import SelectOfScalar
 
 from metasking.logger import logger
-from metasking.model import Log, Record
+from metasking.model import Task, Category, Log, LogCreate, Record
 
 
 def pause_all_logs(session: Session):
@@ -52,7 +52,7 @@ def resume_last_paused_log(session: Session):
     session.commit()
 
 
-def select_log_by_dynamic_id(session: Session, dynamic_log_id: int) -> Log:
+def get_log_by_dynamic_id(session: Session, dynamic_log_id: int) -> Log:
     if dynamic_log_id < 0:
         search_selector = select_non_stopped_logs() \
             .offset(-dynamic_log_id - 1) \
@@ -80,3 +80,32 @@ def select_non_stopped_logs() -> SelectOfScalar[Log]:
         .group_by(Log.id) \
         .order_by(func.max(col(Record.start)).desc()) \
         .order_by(col(Log.id).desc())
+
+
+def apply_log_create(session: Session, source: LogCreate, target: Log):
+    log_data = source.dict(exclude_unset=True)
+    for key, value in log_data.items():
+        if key == "task":
+            selector_task = select(Task) \
+                .where(Task.name == value)
+            result_task = session.exec(selector_task)
+            db_task = result_task.first()
+            if not db_task:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Task not found"
+                )
+            target.task_id = db_task.id
+        elif key == "category":
+            selector_category = select(Category) \
+                .where(Category.name == value)
+            result_category = session.exec(selector_category)
+            db_category = result_category.first()
+            if not db_category:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Category not found"
+                )
+            target.category_id = db_category.id
+        else:
+            setattr(target, key, value)

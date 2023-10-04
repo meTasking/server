@@ -16,8 +16,9 @@ from metasking.model import (
 from metasking.db import (
     pause_all_logs,
     resume_last_paused_log,
-    select_log_by_dynamic_id,
+    get_log_by_dynamic_id,
     select_active_record,
+    apply_log_create
 )
 # from metasking.asyncsessionfix import AsyncSession
 
@@ -375,41 +376,15 @@ def create_log(
 def start_log(
     *,
     session: Session = Depends(use_session),
-    log: LogCreate = Body(),
+    log: Optional[LogCreate] = Body(),
 ):
     check_read_only()
 
     pause_all_logs(session)
 
     db_log = Log()
-
-    log_data = log.dict(exclude_unset=True)
-    for key, value in log_data.items():
-        if key == "task":
-            selector_task = select(Task) \
-                .where(Task.name == value)
-            result_task = session.exec(selector_task)
-            db_task = result_task.first()
-            if not db_task:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Task not found"
-                )
-            db_log.task_id = db_task.id
-        elif key == "category":
-            selector_category = select(Category) \
-                .where(Category.name == value)
-            result_category = session.exec(selector_category)
-            db_category = result_category.first()
-            if not db_category:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Category not found"
-                )
-            db_log.category_id = db_category.id
-        else:
-            setattr(db_log, key, value)
-
+    if log:
+        apply_log_create(session, log, db_log)
     db_log.records.append(Record())
     session.add(db_log)
     session.commit()
@@ -427,6 +402,7 @@ def start_log(
 def next_log(
     *,
     session: Session = Depends(use_session),
+    log: Optional[LogCreate] = Body(),
 ):
     check_read_only()
     result = session.exec(select_active_record())
@@ -437,6 +413,8 @@ def next_log(
         db_record.log.stopped = True
         session.add(db_record.log)
     db_log = Log()
+    if log:
+        apply_log_create(session, log, db_log)
     db_log.records.append(Record())
     session.add(db_log)
     session.commit()
@@ -534,7 +512,7 @@ def stop_log(
     dynamic_log_id: int,
 ):
     check_read_only()
-    db_log = select_log_by_dynamic_id(session, dynamic_log_id)
+    db_log = get_log_by_dynamic_id(session, dynamic_log_id)
     if db_log.stopped:
         raise HTTPException(status_code=400, detail="Log already stopped")
     db_log.stopped = True
@@ -647,7 +625,7 @@ def resume_log(
     dynamic_log_id: int,
 ):
     check_read_only()
-    db_log = select_log_by_dynamic_id(session, dynamic_log_id)
+    db_log = get_log_by_dynamic_id(session, dynamic_log_id)
 
     pause_all_logs(session)
 
@@ -713,7 +691,7 @@ def read_log(
     session: Session = Depends(use_session),
     dynamic_log_id: int,
 ):
-    return select_log_by_dynamic_id(session, dynamic_log_id)
+    return get_log_by_dynamic_id(session, dynamic_log_id)
 
 
 @api.put(
@@ -813,7 +791,7 @@ def delete_log(
     dynamic_log_id: int,
 ):
     check_read_only()
-    db_log = select_log_by_dynamic_id(session, dynamic_log_id)
+    db_log = get_log_by_dynamic_id(session, dynamic_log_id)
     for db_record in db_log.records:
         session.delete(db_record)
     session.delete(db_log)
@@ -832,7 +810,7 @@ def split_log(
     at: datetime.datetime,
 ):
     check_read_only()
-    db_log = select_log_by_dynamic_id(session, dynamic_log_id)
+    db_log = get_log_by_dynamic_id(session, dynamic_log_id)
 
     db_log2 = Log(
         category_id=db_log.category_id,
