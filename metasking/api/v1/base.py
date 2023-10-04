@@ -881,17 +881,42 @@ def merge_log(
     for db_record in db_log2.records:
         db_log.records.append(db_record)
 
-    # Merge name and description
+    # Merge properties
+
+    # Keep both names
     if db_log.name != db_log2.name:
         db_log.name += " + " + db_log2.name
+
+    # Keep both descriptions
     if db_log.description != db_log2.description:
         if db_log.description is None:
             db_log.description = db_log2.description
         elif db_log2.description is not None:
             db_log.description += "\n\n" + db_log2.description
 
+    # Both logs must be stopped to if the merged log is to be stopped too
+    db_log.stopped = db_log.stopped and db_log2.stopped
+
+    # Prefer the category/task of the first log
+    if db_log.category_id != db_log2.category_id and \
+            db_log.category_id is None:
+        db_log.category_id = db_log2.category_id
+    if db_log.task_id != db_log2.task_id and db_log.task_id is None:
+        db_log.task_id = db_log2.task_id
+
+    # Merge meta - prefer the first log meta if any
+    # Add second log meta to the first log meta if both exist
+    if db_log.meta != db_log2.meta:
+        if db_log.meta is None:
+            db_log.meta = db_log2.meta
+        elif db_log2.meta is not None:
+            db_log.meta["_merged"] = db_log2.meta
+
     # Delete the second log
     session.delete(db_log2)
+
+    # Save the first log
+    session.add(db_log)
 
     session.commit()
     session.refresh(db_log)
