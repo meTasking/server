@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 from typing import Optional
 
@@ -7,11 +6,11 @@ from sqlmodel import Session, select, func, col, or_
 
 from metasking.db import use_session
 from metasking.model import (
-    Log, LogCreate, LogCreateWithRecords, LogRead,
+    Log, LogCreate, LogCreateWithRecords,
     LogReadWithRecords, LogUpdateWithRecords,
-    Record, RecordCreate, RecordRead, RecordUpdate, LogRecordUpdate,
-    Task, TaskCreate, TaskRead, TaskUpdate,
-    Category, CategoryCreate, CategoryRead, CategoryUpdate,
+    Record, LogRecordUpdate,
+    Task,
+    Category,
 )
 from metasking.db import (
     pause_all_logs,
@@ -20,271 +19,14 @@ from metasking.db import (
     select_active_record,
     apply_log_create,
 )
-from metasking.util import use_request_time
+from metasking.util import use_request_time, check_read_only
 # from metasking.asyncsessionfix import AsyncSession
 
-api = APIRouter()
-
-READ_ONLY = os.environ.get("READ_ONLY", "false").lower() in (
-    "true", "1", "yes", "y", "on"
-)
-
-
-def check_read_only():
-    if READ_ONLY:
-        raise HTTPException(status_code=403, detail="Read only mode")
-
-
-@api.get("/task/list", response_model=list[TaskRead])
-def get_tasks(
-    *,
-    session: Session = Depends(use_session),
-    offset: int = 0,
-    limit: int = Query(100, lte=1000),
-):
-    selector = select(Task) \
-        .offset(offset) \
-        .limit(limit)
-    result = session.exec(selector)
-    tasks = result.all()
-    return tasks
-
-
-@api.post(
-    "/task",
-    response_model=TaskRead,
-    responses={
-        403: {"description": "Read only mode"},
-    },
-)
-def create_task(
-    *,
-    session: Session = Depends(use_session),
-    task: TaskCreate = Body(),
-):
-    check_read_only()
-    db_task = Task.from_orm(task)
-    session.add(db_task)
-    session.commit()
-    session.refresh(db_task)
-    return db_task
+api = APIRouter(prefix="/log", tags=["log"])
 
 
 @api.get(
-    "/task/{task_id}",
-    response_model=TaskRead,
-    responses={
-        404: {"description": "Task not found"},
-    }
-)
-def read_task(
-    *,
-    session: Session = Depends(use_session),
-    task_id: int,
-):
-    task = session.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return task
-
-
-@api.put(
-    "/task/{task_id}",
-    response_model=TaskRead,
-    responses={
-        403: {"description": "Read only mode"},
-        404: {"description": "Task not found"},
-    },
-)
-def update_task(
-    *,
-    session: Session = Depends(use_session),
-    task_id: int,
-    task: TaskUpdate = Body(),
-):
-    check_read_only()
-    db_task = session.get(Task, task_id)
-    if not db_task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    task_data = task.dict(exclude_unset=True)
-    for key, value in task_data.items():
-        setattr(db_task, key, value)
-    session.add(db_task)
-    session.commit()
-    session.refresh(db_task)
-    return db_task
-
-
-@api.delete(
-    "/task/{task_id}",
-    response_model=TaskRead,
-    responses={
-        403: {"description": "Read only mode"},
-        404: {"description": "Task not found"},
-    },
-)
-def delete_task(
-    *,
-    session: Session = Depends(use_session),
-    task_id: int,
-):
-    check_read_only()
-    db_task = session.get(Task, task_id)
-    if not db_task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    session.delete(db_task)
-    session.commit()
-    return db_task
-
-
-@api.get(
-    "/task/{task_id}/logs",
-    response_model=list[LogRead],
-    responses={
-        404: {"description": "Task not found"},
-    }
-)
-def get_task_logs(
-    *,
-    session: Session = Depends(use_session),
-    task_id: int,
-    offset: int = 0,
-    limit: int = Query(100, lte=1000),
-):
-    return get_logs(
-        session=session,
-        offset=offset,
-        limit=limit,
-        task_id=task_id,
-    )
-
-
-@api.get("/category/list", response_model=list[CategoryRead])
-def get_categories(
-    *,
-    session: Session = Depends(use_session),
-    offset: int = 0,
-    limit: int = Query(100, lte=1000),
-):
-    selector = select(Category) \
-        .offset(offset) \
-        .limit(limit)
-    result = session.exec(selector)
-    categories = result.all()
-    return categories
-
-
-@api.post(
-    "/category",
-    response_model=CategoryRead,
-    responses={
-        403: {"description": "Read only mode"},
-    },
-)
-def create_category(
-    *,
-    session: Session = Depends(use_session),
-    category: CategoryCreate = Body(),
-):
-    check_read_only()
-    db_category = Category.from_orm(category)
-    session.add(db_category)
-    session.commit()
-    session.refresh(db_category)
-    return db_category
-
-
-@api.get(
-    "/category/{category_id}",
-    response_model=CategoryRead,
-    responses={
-        404: {"description": "Category not found"},
-    },
-)
-def read_category(
-    *,
-    session: Session = Depends(use_session),
-    category_id: int,
-):
-    category = session.get(Category, category_id)
-    if not category:
-        raise HTTPException(status_code=404, detail="Category not found")
-    return category
-
-
-@api.put(
-    "/category/{category_id}",
-    response_model=CategoryRead,
-    responses={
-        403: {"description": "Read only mode"},
-        404: {"description": "Category not found"},
-    },
-)
-def update_category(
-    *,
-    session: Session = Depends(use_session),
-    category_id: int,
-    category: CategoryUpdate = Body(),
-):
-    check_read_only()
-    db_category = session.get(Category, category_id)
-    if not db_category:
-        raise HTTPException(status_code=404, detail="Category not found")
-    category_data = category.dict(exclude_unset=True)
-    for key, value in category_data.items():
-        setattr(db_category, key, value)
-    session.add(db_category)
-    session.commit()
-    session.refresh(db_category)
-    return db_category
-
-
-@api.delete(
-    "/category/{category_id}",
-    response_model=CategoryRead,
-    responses={
-        403: {"description": "Read only mode"},
-        404: {"description": "Category not found"},
-    },
-)
-def delete_category(
-    *,
-    session: Session = Depends(use_session),
-    category_id: int,
-):
-    check_read_only()
-    db_category = session.get(Category, category_id)
-    if not db_category:
-        raise HTTPException(status_code=404, detail="Category not found")
-    session.delete(db_category)
-    session.commit()
-    return db_category
-
-
-@api.get(
-    "/category/{category_id}/logs",
-    response_model=list[LogRead],
-    responses={
-        404: {"description": "Category not found"},
-    },
-)
-def get_category_logs(
-    *,
-    session: Session = Depends(use_session),
-    category_id: int,
-    offset: int = 0,
-    limit: int = Query(100, lte=1000),
-):
-    return get_logs(
-        session=session,
-        offset=offset,
-        limit=limit,
-        category_id=category_id,
-    )
-
-
-@api.get(
-    "/log/list",
+    "/list",
     response_model=list[LogReadWithRecords],
     responses={
         404: {"description": "Category or Task not found"},
@@ -345,7 +87,7 @@ def get_logs(
 
 
 @api.post(
-    "/log",
+    "/",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -368,7 +110,7 @@ def create_log(
 
 
 @api.post(
-    "/log/start",
+    "/start",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -392,7 +134,7 @@ def start_log(
 
 
 @api.post(
-    "/log/next",  # Similar to /log/start but stops currently active log
+    "/next",  # Similar to /start but stops currently active log
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -420,7 +162,7 @@ def next_log(
 
 
 @api.post(
-    "/log/all/stop",
+    "/all/stop",
     response_model=list[LogReadWithRecords],
     responses={
         403: {"description": "Read only mode"},
@@ -457,7 +199,7 @@ def stop_all_logs(
 
 
 @api.post(
-    "/log/active/stop",
+    "/active/stop",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -497,7 +239,7 @@ def stop_active_log(
 
 
 @api.post(
-    "/log/{dynamic_log_id}/stop",
+    "/{dynamic_log_id}/stop",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -543,7 +285,7 @@ def stop_log(
 
 
 @api.post(
-    "/log/active/pause",
+    "/active/pause",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -569,7 +311,7 @@ def pause_active_log(
 
 
 @api.post(
-    "/log/{log_id}/pause",
+    "/{log_id}/pause",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -608,7 +350,7 @@ def pause_log(
 
 
 @api.post(
-    "/log/{dynamic_log_id}/resume",
+    "/{dynamic_log_id}/resume",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -665,7 +407,7 @@ def resume_log(
 
 
 @api.get(
-    "/log/active",
+    "/active",
     response_model=LogReadWithRecords,
     responses={
         404: {"description": "No active log found"},
@@ -683,7 +425,7 @@ def get_active_log(
 
 
 @api.get(
-    "/log/{dynamic_log_id}",
+    "/{dynamic_log_id}",
     response_model=LogReadWithRecords,
     responses={
         404: {"description": "Log not found"},
@@ -698,7 +440,7 @@ def read_log(
 
 
 @api.put(
-    "/log/{log_id}",
+    "/{log_id}",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -781,7 +523,7 @@ def update_log(
 
 
 @api.delete(
-    "/log/{dynamic_log_id}",
+    "/{dynamic_log_id}",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -803,7 +545,7 @@ def delete_log(
 
 
 @api.post(
-    "/log/{dynamic_log_id}/split",
+    "/{dynamic_log_id}/split",
     response_model=list[LogReadWithRecords],
 )
 def split_log(
@@ -861,7 +603,7 @@ def split_log(
 
 
 @api.get(
-    "/log/{log_id}/merge/{with_log_id}",
+    "/{log_id}/merge/{with_log_id}",
     response_model=LogReadWithRecords,
     responses={
         404: {"description": "Log not found"},
@@ -924,114 +666,3 @@ def merge_log(
     session.commit()
     session.refresh(db_log)
     return db_log
-
-
-@api.post(
-    "/record",
-    response_model=RecordRead,
-    responses={
-        403: {"description": "Read only mode"},
-    },
-)
-def create_record(
-    *,
-    session: Session = Depends(use_session),
-    record: RecordCreate = Body(),
-):
-    check_read_only()
-    db_record = Record.from_orm(record)
-    session.add(db_record)
-    session.commit()
-    session.refresh(db_record)
-    return db_record
-
-
-@api.get(
-    "/record/{record_id}",
-    response_model=RecordRead,
-    responses={
-        404: {"description": "Record not found"},
-    },
-)
-def read_record(
-    *,
-    session: Session = Depends(use_session),
-    record_id: int,
-):
-    record = session.get(Record, record_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    return record
-
-
-@api.put(
-    "/record/{record_id}",
-    response_model=RecordRead,
-    responses={
-        403: {"description": "Read only mode"},
-        404: {"description": "Record not found"},
-    },
-)
-def update_record(
-    *,
-    session: Session = Depends(use_session),
-    record_id: int,
-    record: RecordUpdate = Body(),
-):
-    check_read_only()
-    db_record = session.get(Record, record_id)
-    if not db_record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    record_data = record.dict(exclude_unset=True)
-    for key, value in record_data.items():
-        setattr(db_record, key, value)
-    session.add(db_record)
-    session.commit()
-    session.refresh(db_record)
-    return db_record
-
-
-@api.delete(
-    "/record/{record_id}",
-    response_model=RecordRead,
-    responses={
-        403: {"description": "Read only mode"},
-        404: {"description": "Record not found"},
-    },
-)
-def delete_record(
-    *,
-    session: Session = Depends(use_session),
-    record_id: int,
-):
-    check_read_only()
-    db_record = session.get(Record, record_id)
-    if not db_record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    session.delete(db_record)
-
-    # If the log is now empty, delete it too
-    db_log = db_record.log
-    if not db_log.records:
-        session.delete(db_log)
-
-    session.commit()
-    return db_record
-
-
-@api.get(
-    "/record/{record_id}/log",
-    response_model=LogReadWithRecords,
-    responses={
-        404: {"description": "Record not found"},
-    },
-)
-def get_record_log(
-    *,
-    session: Session = Depends(use_session),
-    record_id: int,
-):
-    record = session.get(Record, record_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    return record.log
