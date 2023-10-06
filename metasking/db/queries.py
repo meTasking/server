@@ -8,16 +8,16 @@ from metasking.logger import logger
 from metasking.model import Task, Category, Log, LogCreate, Record
 
 
-def pause_all_logs(session: Session):
+def pause_all_logs(session: Session, request_time: datetime):
     selector = select(Record) \
         .where(col(Record.end).is_(None))
     result = session.exec(selector)
     for db_record in result:
-        db_record.end = datetime.now()
+        db_record.end = request_time
         session.add(db_record)
 
 
-def resume_last_paused_log(session: Session):
+def resume_last_paused_log(session: Session, request_time: datetime):
     """
     NOTE: assumes no log is currently running
     """
@@ -47,7 +47,7 @@ def resume_last_paused_log(session: Session):
         return
 
     # Start a new record - resume the log
-    session.add(Record(log_id=db_log.id))
+    session.add(Record(log_id=db_log.id, start=request_time))
 
     session.commit()
 

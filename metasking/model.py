@@ -1,5 +1,5 @@
 from typing import Optional, Any
-import datetime
+from datetime import datetime
 from sqlmodel import (
     Field,
     SQLModel,
@@ -107,11 +107,11 @@ class RecordBase(SQLModel):
         default=None,
         sa_column=Column(JSON, nullable=True)
     )
-    start: datetime.datetime = Field(
-        default_factory=datetime.datetime.now,
+    start: datetime = Field(
+        default_factory=datetime.now,
         index=True
     )
-    end: Optional[datetime.datetime] = Field(default=None, index=True)
+    end: Optional[datetime] = Field(default=None, index=True)
 
 
 class Record(RecordBase, table=True):  # type: ignore
@@ -134,11 +134,11 @@ class RecordReadInsideLog(SQLModel):
         default=None,
         sa_column=Column(JSON, nullable=True)
     )
-    start: datetime.datetime = Field(
-        default_factory=datetime.datetime.now,
+    start: datetime = Field(
+        default_factory=datetime.now,
         index=True
     )
-    end: Optional[datetime.datetime] = Field(default=None, index=True)
+    end: Optional[datetime] = Field(default=None, index=True)
 
 
 class RecordReadWithLog(RecordRead):
@@ -150,11 +150,11 @@ class RecordCreateInsideLog(SQLModel):
         default=None,
         sa_column=Column(JSON, nullable=True)
     )
-    start: datetime.datetime = Field(
-        default_factory=datetime.datetime.now,
+    start: datetime = Field(
+        default_factory=datetime.now,
         index=True
     )
-    end: Optional[datetime.datetime] = Field(default=None, index=True)
+    end: Optional[datetime] = Field(default=None, index=True)
 
 
 class RecordUpdate(SQLModel):
@@ -163,8 +163,8 @@ class RecordUpdate(SQLModel):
         default=None,
         sa_column=Column(JSON, nullable=True)
     )
-    start: Optional[datetime.datetime] = None
-    end: Optional[datetime.datetime] = None
+    start: Optional[datetime] = None
+    end: Optional[datetime] = None
 
 
 class LogRecordUpdate(SQLModel):
@@ -173,8 +173,8 @@ class LogRecordUpdate(SQLModel):
         default=None,
         sa_column=Column(JSON, nullable=True)
     )
-    start: Optional[datetime.datetime] = None
-    end: Optional[datetime.datetime] = None
+    start: Optional[datetime] = None
+    end: Optional[datetime] = None
 
 
 class LogBase(SQLModel):

@@ -1,5 +1,5 @@
 import os
-import datetime
+from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, APIRouter, HTTPException, Query, Body
@@ -18,8 +18,9 @@ from metasking.db import (
     resume_last_paused_log,
     get_log_by_dynamic_id,
     select_active_record,
-    apply_log_create
+    apply_log_create,
 )
+from metasking.util import use_request_time
 # from metasking.asyncsessionfix import AsyncSession
 
 api = APIRouter()
@@ -298,8 +299,8 @@ def get_logs(
     task_id: Optional[int] = None,
     stopped: Optional[bool] = None,
     order: str = Query("desc", regex="^(asc|desc)$"),
-    since: Optional[datetime.datetime] = None,
-    until: Optional[datetime.datetime] = None,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
 ):
     selector = select(Log)
     if category_id is not None:
@@ -376,16 +377,17 @@ def create_log(
 def start_log(
     *,
     session: Session = Depends(use_session),
+    request_time: datetime = Depends(use_request_time),
     log: Optional[LogCreate] = Body(),
 ):
     check_read_only()
 
-    pause_all_logs(session)
+    pause_all_logs(session, request_time)
 
     db_log = Log()
     if log:
         apply_log_create(session, log, db_log)
-    db_log.records.append(Record())
+    db_log.records.append(Record(start=request_time))
     session.add(db_log)
     session.commit()
     session.refresh(db_log)
@@ -402,20 +404,21 @@ def start_log(
 def next_log(
     *,
     session: Session = Depends(use_session),
+    request_time: datetime = Depends(use_request_time),
     log: Optional[LogCreate] = Body(),
 ):
     check_read_only()
     result = session.exec(select_active_record())
     db_record = result.first()
     if db_record:
-        db_record.end = datetime.datetime.now()
+        db_record.end = request_time
         session.add(db_record)
         db_record.log.stopped = True
         session.add(db_record.log)
     db_log = Log()
     if log:
         apply_log_create(session, log, db_log)
-    db_log.records.append(Record())
+    db_log.records.append(Record(start=request_time))
     session.add(db_log)
     session.commit()
     session.refresh(db_log)
@@ -433,6 +436,7 @@ def next_log(
 def stop_all_logs(
     *,
     session: Session = Depends(use_session),
+    request_time: datetime = Depends(use_request_time),
 ):
     check_read_only()
     selector = select(Log) \
@@ -448,7 +452,7 @@ def stop_all_logs(
         resultR = session.exec(selectorR)
         db_records = resultR.all()
         for db_record in db_records:
-            db_record.end = datetime.datetime.now()
+            db_record.end = request_time
             session.add(db_record)
         db_log.stopped = True
         session.add(db_log)
@@ -469,6 +473,7 @@ def stop_all_logs(
 def stop_active_log(
     *,
     session: Session = Depends(use_session),
+    request_time: datetime = Depends(use_request_time),
 ):
     check_read_only()
     selector = select(Record) \
@@ -485,13 +490,13 @@ def stop_active_log(
     session.add(db_log)
 
     # Write the end time to the last record if the log is not already paused
-    db_record.end = datetime.datetime.now()
+    db_record.end = request_time
     session.add(db_record)
 
     session.commit()
 
     # Resume last paused log if any
-    resume_last_paused_log(session)
+    resume_last_paused_log(session, request_time)
 
     session.refresh(db_log)
     return db_log
@@ -509,6 +514,7 @@ def stop_active_log(
 def stop_log(
     *,
     session: Session = Depends(use_session),
+    request_time: datetime = Depends(use_request_time),
     dynamic_log_id: int,
 ):
     check_read_only()
@@ -529,14 +535,14 @@ def stop_log(
     db_record = result.first()
     if db_record and not db_record.end:
         was_active = True
-        db_record.end = datetime.datetime.now()
+        db_record.end = request_time
         session.add(db_record)
 
     session.commit()
 
     if was_active:
         # Resume last paused log if any
-        resume_last_paused_log(session)
+        resume_last_paused_log(session, request_time)
 
     session.refresh(db_log)
     return db_log
@@ -553,6 +559,7 @@ def stop_log(
 def pause_active_log(
     *,
     session: Session = Depends(use_session),
+    request_time: datetime = Depends(use_request_time),
 ):
     check_read_only()
     result = session.exec(select_active_record())
@@ -560,7 +567,7 @@ def pause_active_log(
     if not db_record:
         raise HTTPException(status_code=404, detail="No active log found")
     db_log = db_record.log
-    db_record.end = datetime.datetime.now()
+    db_record.end = request_time
     session.add(db_record)
     session.commit()
     session.refresh(db_log)
@@ -579,6 +586,7 @@ def pause_active_log(
 def pause_log(
     *,
     session: Session = Depends(use_session),
+    request_time: datetime = Depends(use_request_time),
     log_id: int,
 ):
     check_read_only()
@@ -597,7 +605,7 @@ def pause_log(
     db_record = result.first()
     if not db_record or db_record.end:
         raise HTTPException(status_code=400, detail="Log already paused")
-    db_record.end = datetime.datetime.now()
+    db_record.end = request_time
     session.add(db_record)
 
     session.commit()
@@ -622,12 +630,13 @@ def pause_log(
 def resume_log(
     *,
     session: Session = Depends(use_session),
+    request_time: datetime = Depends(use_request_time),
     dynamic_log_id: int,
 ):
     check_read_only()
     db_log = get_log_by_dynamic_id(session, dynamic_log_id)
 
-    pause_all_logs(session)
+    pause_all_logs(session, request_time)
 
     was_stopped = db_log.stopped
 
@@ -654,7 +663,7 @@ def resume_log(
             raise HTTPException(status_code=400, detail="Log already running")
 
     # Start a new record
-    session.add(Record(log_id=db_log.id))
+    session.add(Record(log_id=db_log.id, start=request_time))
 
     session.commit()
     session.refresh(db_log)
@@ -807,7 +816,7 @@ def split_log(
     *,
     session: Session = Depends(use_session),
     dynamic_log_id: int,
-    at: datetime.datetime,
+    at: datetime,
 ):
     check_read_only()
     db_log = get_log_by_dynamic_id(session, dynamic_log_id)
