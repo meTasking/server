@@ -384,10 +384,7 @@ def start_log(
 
     pause_all_logs(session, request_time)
 
-    db_log = Log()
-    if log:
-        apply_log_create(session, log, db_log)
-    db_log.records.append(Record(start=request_time))
+    db_log = apply_log_create(session, request_time, log)
     session.add(db_log)
     session.commit()
     session.refresh(db_log)
@@ -415,10 +412,7 @@ def next_log(
         session.add(db_record)
         db_record.log.stopped = True
         session.add(db_record.log)
-    db_log = Log()
-    if log:
-        apply_log_create(session, log, db_log)
-    db_log.records.append(Record(start=request_time))
+    db_log = apply_log_create(session, request_time, log)
     session.add(db_log)
     session.commit()
     session.refresh(db_log)

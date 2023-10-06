@@ -1,3 +1,4 @@
+from typing import Optional
 from datetime import datetime
 
 from fastapi import HTTPException
@@ -82,7 +83,17 @@ def select_non_stopped_logs() -> SelectOfScalar[Log]:
         .order_by(col(Log.id).desc())
 
 
-def apply_log_create(session: Session, source: LogCreate, target: Log):
+def apply_log_create(
+    session: Session,
+    request_time: datetime,
+    source: Optional[LogCreate]
+) -> Log:
+    target = Log()
+    target_record = Record(start=request_time)
+    target.records.append(target_record)
+    if not source:
+        return target
+
     log_data = source.dict(exclude_unset=True)
     for key, value in log_data.items():
         if key == "task":
@@ -107,5 +118,8 @@ def apply_log_create(session: Session, source: LogCreate, target: Log):
                     detail="Category not found"
                 )
             target.category_id = db_category.id
+        elif key == "adjust_start":
+            target_record.start += value
         else:
             setattr(target, key, value)
+    return target

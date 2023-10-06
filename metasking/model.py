@@ -1,5 +1,5 @@
 from typing import Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlmodel import (
     Field,
     SQLModel,
@@ -248,6 +248,7 @@ class LogCreate(SQLModel):
     )
     name: Optional[str] = None
     description: Optional[str] = None
+    adjust_start: Optional[timedelta] = None
 
 
 class LogCreateWithRecords(LogBase):
