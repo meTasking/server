@@ -41,6 +41,7 @@ def get_logs(
     category_id: Optional[int] = None,
     task_id: Optional[int] = None,
     stopped: Optional[bool] = None,
+    flags: Optional[list[str]] = None,
     order: str = Query("desc", regex="^(asc|desc)$"),
     since: Optional[datetime] = None,
     until: Optional[datetime] = None,
@@ -59,10 +60,20 @@ def get_logs(
     if stopped is not None:
         selector = selector.where(Log.stopped == stopped)
 
-    # Order by start time of the last record
-    selector = selector.join(Record, isouter=True) \
-        .group_by(Log.id) \
+    if flags is not None:
+        # Mix in the flags
+        # Logs without flags will disappear at this point
+        # We don't support filtering for logs without flag(s)
+        selector = selector.join(LogFlag) \
+            .where(col(LogFlag.flag).in_(flags))
 
+    # Mix in the record for sorting and filtering
+    selector = selector.join(Record, isouter=True)
+
+    # Both flags and records need to be grouped by log id to avoid duplicates
+    selector = selector.group_by(Log.id)
+
+    # Order by start time of the last/first record
     if order == "desc":
         selector = selector.order_by(func.max(col(Record.start)).desc()) \
             .order_by(col(Log.id).desc())
