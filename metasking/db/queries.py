@@ -6,7 +6,14 @@ from sqlmodel import Session, select, func, col
 from sqlmodel.sql.expression import SelectOfScalar
 
 from metasking.logger import logger
-from metasking.model import Task, Category, Log, LogCreate, Record
+from metasking.model import (
+    Task,
+    Category,
+    Log,
+    LogCreate,
+    Record,
+    LogFlag,
+)
 
 
 def pause_all_logs(session: Session, request_time: datetime):
@@ -106,7 +113,7 @@ def apply_log_create(
                     status_code=404,
                     detail="Task not found"
                 )
-            target.task_id = db_task.id
+            target.task = db_task
         elif key == "category":
             selector_category = select(Category) \
                 .where(Category.name == value)
@@ -117,7 +124,10 @@ def apply_log_create(
                     status_code=404,
                     detail="Category not found"
                 )
-            target.category_id = db_category.id
+            target.category = db_category
+        elif key == "flags":
+            for flag in value:
+                target.flags.append(LogFlag(flag=flag))
         elif key == "adjust_start":
             target_record.start += value
         else:

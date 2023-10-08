@@ -4,6 +4,8 @@ from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
 
 import metasking.logger  # noqa: F401
+import metasking.model  # noqa: F401
+
 from metasking.api import api_router as api
 from metasking.model import ErrorModel
 

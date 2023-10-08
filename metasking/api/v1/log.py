@@ -11,6 +11,7 @@ from metasking.model import (
     Record, LogRecordUpdate,
     Task,
     Category,
+    LogFlag,
 )
 from metasking.db import (
     pause_all_logs,
@@ -495,6 +496,11 @@ def update_log(
                             detail="Task not found"
                         )
             db_log.task = db_task
+        elif key == "flags":
+            flags = []
+            for flag in value:
+                flags.append(LogFlag(flag=flag))
+            db_log.flags = flags
         elif key == "records":
             for record_data in value:
                 record = LogRecordUpdate()
