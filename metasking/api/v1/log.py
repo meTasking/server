@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import Depends, APIRouter, HTTPException, Query, Body
@@ -202,8 +202,13 @@ def stop_all_logs(
     *,
     session: Session = Depends(use_session),
     request_time: datetime = Depends(use_request_time),
+    adjust_end: Optional[timedelta] = None,
 ):
     check_read_only()
+
+    if adjust_end:
+        request_time += adjust_end
+
     selector = select(Log) \
         .where(col(Log.stopped).is_(False))
     result = session.exec(selector)
@@ -239,8 +244,13 @@ def stop_active_log(
     *,
     session: Session = Depends(use_session),
     request_time: datetime = Depends(use_request_time),
+    adjust_end: Optional[timedelta] = None,
 ):
     check_read_only()
+
+    if adjust_end:
+        request_time += adjust_end
+
     selector = select(Record) \
         .where(col(Record.end).is_(None)) \
         .order_by(col(Record.start).desc()) \
@@ -281,8 +291,13 @@ def stop_log(
     session: Session = Depends(use_session),
     request_time: datetime = Depends(use_request_time),
     dynamic_log_id: int,
+    adjust_end: Optional[timedelta] = None,
 ):
     check_read_only()
+
+    if adjust_end:
+        request_time += adjust_end
+
     db_log = get_log_by_dynamic_id(session, dynamic_log_id)
     if db_log.stopped:
         raise HTTPException(status_code=400, detail="Log already stopped")
@@ -325,8 +340,13 @@ def pause_active_log(
     *,
     session: Session = Depends(use_session),
     request_time: datetime = Depends(use_request_time),
+    adjust_end: Optional[timedelta] = None,
 ):
     check_read_only()
+
+    if adjust_end:
+        request_time += adjust_end
+
     result = session.exec(select_active_record())
     db_record = result.first()
     if not db_record:
@@ -353,8 +373,13 @@ def pause_log(
     session: Session = Depends(use_session),
     request_time: datetime = Depends(use_request_time),
     log_id: int,
+    adjust_end: Optional[timedelta] = None,
 ):
     check_read_only()
+
+    if adjust_end:
+        request_time += adjust_end
+
     db_log = session.get(Log, log_id)
     if not db_log:
         raise HTTPException(status_code=404, detail="Log not found")
@@ -397,8 +422,13 @@ def resume_log(
     session: Session = Depends(use_session),
     request_time: datetime = Depends(use_request_time),
     dynamic_log_id: int,
+    adjust_end: Optional[timedelta] = None,
 ):
     check_read_only()
+
+    if adjust_end:
+        request_time += adjust_end
+
     db_log = get_log_by_dynamic_id(session, dynamic_log_id)
 
     pause_all_logs(session, request_time)
