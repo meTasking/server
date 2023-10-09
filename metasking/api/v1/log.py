@@ -41,7 +41,7 @@ def get_logs(
     category_id: Optional[int] = None,
     task_id: Optional[int] = None,
     stopped: Optional[bool] = None,
-    flags: Optional[list[str]] = None,
+    flags: Optional[list[str]] = Query(None),
     order: str = Query("desc", regex="^(asc|desc)$"),
     since: Optional[datetime] = None,
     until: Optional[datetime] = None,
@@ -60,7 +60,7 @@ def get_logs(
     if stopped is not None:
         selector = selector.where(Log.stopped == stopped)
 
-    if flags is not None:
+    if flags is not None and len(flags) > 0:
         # Mix in the flags
         # Logs without flags will disappear at this point
         # We don't support filtering for logs without flag(s)
