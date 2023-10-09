@@ -136,9 +136,17 @@ def start_log(
 ):
     check_read_only()
 
-    pause_all_logs(session, request_time)
+    # Create a new log
+    db_log, adjusted_request_time = apply_log_create(
+        session,
+        request_time,
+        log
+    )
 
-    db_log = apply_log_create(session, request_time, log)
+    # Pause all active logs
+    pause_all_logs(session, adjusted_request_time)
+
+    # Save the new log
     session.add(db_log)
     session.commit()
     session.refresh(db_log)
@@ -159,14 +167,23 @@ def next_log(
     log: Optional[LogCreate] = Body(),
 ):
     check_read_only()
+    # Create a new log
+    db_log, adjusted_request_time = apply_log_create(
+        session,
+        request_time,
+        log
+    )
+
+    # Stop the active log
     result = session.exec(select_active_record())
     db_record = result.first()
     if db_record:
-        db_record.end = request_time
+        db_record.end = adjusted_request_time
         session.add(db_record)
         db_record.log.stopped = True
         session.add(db_record.log)
-    db_log = apply_log_create(session, request_time, log)
+
+    # Save the new log
     session.add(db_log)
     session.commit()
     session.refresh(db_log)

@@ -94,12 +94,12 @@ def apply_log_create(
     session: Session,
     request_time: datetime,
     source: Optional[LogCreate]
-) -> Log:
+) -> tuple[Log, datetime]:
     target = Log()
     target_record = Record(start=request_time)
     target.records.append(target_record)
     if not source:
-        return target
+        return target, target_record.start
 
     log_data = source.dict(exclude_unset=True)
     for key, value in log_data.items():
@@ -132,4 +132,4 @@ def apply_log_create(
             target_record.start += value
         else:
             setattr(target, key, value)
-    return target
+    return target, target_record.start
