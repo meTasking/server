@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, APIRouter, HTTPException, Query, Body
@@ -20,7 +20,7 @@ from metasking.db import (
     select_active_record,
     apply_log_create,
 )
-from metasking.util import use_request_time, check_read_only
+from metasking.util import RequestTime, check_read_only
 # from metasking.asyncsessionfix import AsyncSession
 
 api = APIRouter(prefix="/log", tags=["log"])
@@ -131,20 +131,20 @@ def create_log(
 def start_log(
     *,
     session: Session = Depends(use_session),
-    request_time: datetime = Depends(use_request_time),
+    request_time: RequestTime,
     log: Optional[LogCreate] = Body(),
 ):
     check_read_only()
 
     # Create a new log
-    db_log, adjusted_request_time = apply_log_create(
+    db_log = apply_log_create(
         session,
         request_time,
         log
     )
 
     # Pause all active logs
-    pause_all_logs(session, adjusted_request_time)
+    pause_all_logs(session, request_time)
 
     # Save the new log
     session.add(db_log)
@@ -163,12 +163,13 @@ def start_log(
 def next_log(
     *,
     session: Session = Depends(use_session),
-    request_time: datetime = Depends(use_request_time),
+    request_time: RequestTime,
     log: Optional[LogCreate] = Body(),
 ):
     check_read_only()
+
     # Create a new log
-    db_log, adjusted_request_time = apply_log_create(
+    db_log = apply_log_create(
         session,
         request_time,
         log
@@ -178,7 +179,7 @@ def next_log(
     result = session.exec(select_active_record())
     db_record = result.first()
     if db_record:
-        db_record.end = adjusted_request_time
+        db_record.end = request_time
         session.add(db_record)
         db_record.log.stopped = True
         session.add(db_record.log)
@@ -201,13 +202,9 @@ def next_log(
 def stop_all_logs(
     *,
     session: Session = Depends(use_session),
-    request_time: datetime = Depends(use_request_time),
-    adjust_end: Optional[timedelta] = None,
+    request_time: RequestTime,
 ):
     check_read_only()
-
-    if adjust_end:
-        request_time += adjust_end
 
     selector = select(Log) \
         .where(col(Log.stopped).is_(False))
@@ -243,13 +240,9 @@ def stop_all_logs(
 def stop_active_log(
     *,
     session: Session = Depends(use_session),
-    request_time: datetime = Depends(use_request_time),
-    adjust_end: Optional[timedelta] = None,
+    request_time: RequestTime,
 ):
     check_read_only()
-
-    if adjust_end:
-        request_time += adjust_end
 
     selector = select(Record) \
         .where(col(Record.end).is_(None)) \
@@ -289,14 +282,10 @@ def stop_active_log(
 def stop_log(
     *,
     session: Session = Depends(use_session),
-    request_time: datetime = Depends(use_request_time),
+    request_time: RequestTime,
     dynamic_log_id: int,
-    adjust_end: Optional[timedelta] = None,
 ):
     check_read_only()
-
-    if adjust_end:
-        request_time += adjust_end
 
     db_log = get_log_by_dynamic_id(session, dynamic_log_id)
     if db_log.stopped:
@@ -339,13 +328,9 @@ def stop_log(
 def pause_active_log(
     *,
     session: Session = Depends(use_session),
-    request_time: datetime = Depends(use_request_time),
-    adjust_end: Optional[timedelta] = None,
+    request_time: RequestTime,
 ):
     check_read_only()
-
-    if adjust_end:
-        request_time += adjust_end
 
     result = session.exec(select_active_record())
     db_record = result.first()
@@ -371,14 +356,10 @@ def pause_active_log(
 def pause_log(
     *,
     session: Session = Depends(use_session),
-    request_time: datetime = Depends(use_request_time),
+    request_time: RequestTime,
     log_id: int,
-    adjust_end: Optional[timedelta] = None,
 ):
     check_read_only()
-
-    if adjust_end:
-        request_time += adjust_end
 
     db_log = session.get(Log, log_id)
     if not db_log:
@@ -420,14 +401,10 @@ def pause_log(
 def resume_log(
     *,
     session: Session = Depends(use_session),
-    request_time: datetime = Depends(use_request_time),
+    request_time: RequestTime,
     dynamic_log_id: int,
-    adjust_end: Optional[timedelta] = None,
 ):
     check_read_only()
-
-    if adjust_end:
-        request_time += adjust_end
 
     db_log = get_log_by_dynamic_id(session, dynamic_log_id)
 

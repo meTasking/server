@@ -112,7 +112,6 @@ class LogCreate(SQLModel):
     )
     name: Optional[str] = None
     description: Optional[str] = None
-    adjust_start: Optional[timedelta] = None
 
 
 class LogCreateWithRecords(LogBase):
