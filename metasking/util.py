@@ -16,9 +16,11 @@ def check_read_only():
 
 
 def use_request_time(
+    override_time: datetime = Query(None, alias="override-time"),
     adjust_time: timedelta = Query(timedelta(), alias="adjust-time")
 ) -> datetime:
-    return datetime.now() + adjust_time
+    time = override_time or datetime.now()
+    return time + adjust_time
 
 
 RequestTime = Annotated[
