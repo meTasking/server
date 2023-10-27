@@ -476,7 +476,15 @@ def read_log(
 
 
 @api.put(
-    "/{log_id}",
+    "/active",
+    response_model=LogReadWithRecords,
+    responses={
+        403: {"description": "Read only mode"},
+        404: {"description": "Log/Category/Task not found"},
+    },
+)
+@api.put(
+    "/{dynamic_log_id}",
     response_model=LogReadWithRecords,
     responses={
         403: {"description": "Read only mode"},
@@ -486,15 +494,20 @@ def read_log(
 def update_log(
     *,
     session: Session = Depends(use_session),
-    log_id: int,
+    dynamic_log_id: int | None = None,
     log: LogUpdateWithRecords = Body(),
     create_category: bool = Query(False, alias="create-category"),
     create_task: bool = Query(False, alias="create-task"),
 ):
     check_read_only()
-    db_log = session.get(Log, log_id)
-    if not db_log:
-        raise HTTPException(status_code=404, detail="Log not found")
+    if dynamic_log_id is None:
+        result = session.exec(select_active_record())
+        db_record = result.first()
+        if not db_record:
+            raise HTTPException(status_code=404, detail="No active log found")
+        db_log = db_record.log
+    else:
+        db_log = get_log_by_dynamic_id(session, dynamic_log_id)
     log_data = log.dict(exclude_unset=True)
     for key, value in log_data.items():
         if key == "category":
