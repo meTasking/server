@@ -483,6 +483,28 @@ def read_log(
         404: {"description": "Log/Category/Task not found"},
     },
 )
+def update_active_log(
+    *,
+    session: Session = Depends(use_session),
+    log: LogUpdateWithRecords = Body(),
+    create_category: bool = Query(False, alias="create-category"),
+    create_task: bool = Query(False, alias="create-task"),
+):
+    check_read_only()
+    result = session.exec(select_active_record())
+    db_record = result.first()
+    if not db_record:
+        raise HTTPException(status_code=404, detail="No active log found")
+    db_log = db_record.log
+    return update_log(
+        session,
+        db_log,
+        log,
+        create_category,
+        create_task,
+    )
+
+
 @api.put(
     "/{dynamic_log_id}",
     response_model=LogReadWithRecords,
@@ -491,23 +513,32 @@ def read_log(
         404: {"description": "Log/Category/Task not found"},
     },
 )
-def update_log(
+def update_exact_log(
     *,
     session: Session = Depends(use_session),
-    dynamic_log_id: int | None = None,
+    dynamic_log_id: int,
     log: LogUpdateWithRecords = Body(),
     create_category: bool = Query(False, alias="create-category"),
     create_task: bool = Query(False, alias="create-task"),
 ):
     check_read_only()
-    if dynamic_log_id is None:
-        result = session.exec(select_active_record())
-        db_record = result.first()
-        if not db_record:
-            raise HTTPException(status_code=404, detail="No active log found")
-        db_log = db_record.log
-    else:
-        db_log = get_log_by_dynamic_id(session, dynamic_log_id)
+    db_log = get_log_by_dynamic_id(session, dynamic_log_id)
+    return update_log(
+        session,
+        db_log,
+        log,
+        create_category,
+        create_task,
+    )
+
+
+def update_log(
+    session: Session,
+    db_log: Log,
+    log: LogUpdateWithRecords,
+    create_category: bool,
+    create_task: bool,
+):
     log_data = log.dict(exclude_unset=True)
     for key, value in log_data.items():
         if key == "category":
@@ -656,7 +687,7 @@ def split_log(
     return [db_log, db_log2]
 
 
-@api.get(
+@api.post(
     "/{log_id}/merge/{with_log_id}",
     response_model=LogReadWithRecords,
     responses={
