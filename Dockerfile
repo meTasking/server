@@ -1,5 +1,5 @@
 # pull official base image
-FROM docker.io/library/python:3.11.6
+FROM docker.io/library/python:3.11.7
 
 # set working directory
 WORKDIR /usr/src/app
