@@ -104,6 +104,9 @@ def apply_log_create(
     log_data = source.dict(exclude_unset=True)
     for key, value in log_data.items():
         if key == "task":
+            if value is None:
+                target.task = None
+                continue
             selector_task = select(Task) \
                 .where(Task.name == value)
             result_task = session.exec(selector_task)
@@ -115,6 +118,9 @@ def apply_log_create(
                 )
             target.task = db_task
         elif key == "category":
+            if value is None:
+                target.category = None
+                continue
             selector_category = select(Category) \
                 .where(Category.name == value)
             result_category = session.exec(selector_category)
@@ -126,6 +132,8 @@ def apply_log_create(
                 )
             target.category = db_category
         elif key == "flags":
+            if value is None:
+                continue
             for flag in value:
                 target.flags.append(LogFlag(flag=flag))
         else:

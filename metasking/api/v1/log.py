@@ -658,11 +658,16 @@ def update_log(
                         )
             db_log.task = db_task
         elif key == "flags":
-            flags = []
-            for flag in value:
-                flags.append(LogFlag(flag=flag))
-            db_log.flags = flags
+            if value is None:
+                db_log.flags = []
+            else:
+                flags = []
+                for flag in value:
+                    flags.append(LogFlag(flag=flag))
+                db_log.flags = flags
         elif key == "records":
+            if value is None:
+                continue
             for record_data in value:
                 record = LogRecordUpdate()
                 for key2, value2 in record_data.items():
