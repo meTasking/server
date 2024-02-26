@@ -717,6 +717,12 @@ def delete_log(
 ):
     check_read_only()
     db_log = get_log_by_dynamic_id(session, dynamic_log_id)
+    session.refresh(db_log, attribute_names=[
+        "task",
+        "category",
+        "flags",
+        "records",
+    ])
     for db_record in db_log.records:
         session.delete(db_record)
     session.delete(db_log)
