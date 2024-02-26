@@ -1,5 +1,5 @@
 from typing import Optional, Any, TYPE_CHECKING
-from datetime import datetime, timedelta
+from datetime import datetime
 from sqlmodel import (
     Field,
     SQLModel,

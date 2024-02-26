@@ -93,7 +93,9 @@ def select_non_stopped_logs() -> SelectOfScalar[Log]:
 def apply_log_create(
     session: Session,
     request_time: datetime,
-    source: Optional[LogCreate]
+    source: Optional[LogCreate],
+    create_category: bool,
+    create_task: bool,
 ) -> Log:
     target = Log()
     target_record = Record(start=request_time)
@@ -112,10 +114,12 @@ def apply_log_create(
             result_task = session.exec(selector_task)
             db_task = result_task.first()
             if not db_task:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Task not found"
-                )
+                if not create_task:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Task not found"
+                    )
+                db_task = Task(name=value)
             target.task = db_task
         elif key == "category":
             if value is None:
@@ -126,10 +130,12 @@ def apply_log_create(
             result_category = session.exec(selector_category)
             db_category = result_category.first()
             if not db_category:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Category not found"
-                )
+                if not create_category:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Category not found"
+                    )
+                db_category = Category(name=value)
             target.category = db_category
         elif key == "flags":
             if value is None:

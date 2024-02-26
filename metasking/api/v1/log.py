@@ -163,6 +163,8 @@ def start_log(
     session: Session = Depends(use_session),
     request_time: RequestTime,
     log: Optional[LogCreate] = Body(),
+    create_category: bool = Query(False, alias="create-category"),
+    create_task: bool = Query(False, alias="create-task"),
 ):
     check_read_only()
 
@@ -170,7 +172,9 @@ def start_log(
     db_log = apply_log_create(
         session,
         request_time,
-        log
+        log,
+        create_category,
+        create_task,
     )
 
     # Pause all active logs
@@ -195,6 +199,8 @@ def next_log(
     session: Session = Depends(use_session),
     request_time: RequestTime,
     log: Optional[LogCreate] = Body(),
+    create_category: bool = Query(False, alias="create-category"),
+    create_task: bool = Query(False, alias="create-task"),
 ):
     check_read_only()
 
@@ -202,7 +208,9 @@ def next_log(
     db_log = apply_log_create(
         session,
         request_time,
-        log
+        log,
+        create_category,
+        create_task,
     )
 
     # Stop the active log
