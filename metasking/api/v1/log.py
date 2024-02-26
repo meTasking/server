@@ -76,12 +76,14 @@ def get_logs(
             .where(Category.name == category)
         ).first()
         if not db_category:
+            # No log has this category
             # raise HTTPException(status_code=404, detail="Category not found")
             return []
         selector = selector.where(Log.category_id == db_category.id)
     if task is not None:
         db_task = session.exec(select(Task).where(Task.name == task)).first()
         if not db_task:
+            # No log has this task
             # raise HTTPException(status_code=404, detail="Task not found")
             return []
         selector = selector.where(Log.task_id == db_task.id)
@@ -230,12 +232,64 @@ def next_log(
 def stop_all_logs(
     *,
     session: Session = Depends(use_session),
+    category_id: Optional[int] = None,
+    task_id: Optional[int] = None,
+    category: Optional[str] = None,
+    task: Optional[str] = None,
+    flags: Optional[list[str]] = Query(None),
     request_time: RequestTime,
 ):
     check_read_only()
 
+    if category is not None and category_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Use either category or category_id, not both"
+        )
+    if task is not None and task_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Use either task or task_id, not both"
+        )
+
     selector = select(Log) \
         .where(col(Log.stopped).is_(False))
+
+    if category_id is not None:
+        db_category = session.get(Category, category_id)
+        if not db_category:
+            raise HTTPException(status_code=404, detail="Category not found")
+        selector = selector.where(Log.category_id == category_id)
+    if task_id is not None:
+        db_task = session.get(Task, task_id)
+        if not db_task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        selector = selector.where(Log.task_id == task_id)
+    if category is not None:
+        db_category = session.exec(
+            select(Category)
+            .where(Category.name == category)
+        ).first()
+        if not db_category:
+            # No log has this category
+            # raise HTTPException(status_code=404, detail="Category not found")
+            return []
+        selector = selector.where(Log.category_id == db_category.id)
+    if task is not None:
+        db_task = session.exec(select(Task).where(Task.name == task)).first()
+        if not db_task:
+            # No log has this task
+            # raise HTTPException(status_code=404, detail="Task not found")
+            return []
+        selector = selector.where(Log.task_id == db_task.id)
+
+    if flags is not None and len(flags) > 0:
+        # Mix in the flags
+        # Logs without flags will disappear at this point
+        # We don't support filtering for logs without flag(s)
+        selector = selector.join(LogFlag) \
+            .where(col(LogFlag.flag).in_(flags))
+
     result = session.exec(selector)
     db_logs = result.all()
     if not db_logs:
