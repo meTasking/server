@@ -40,12 +40,25 @@ def get_logs(
     limit: int = Query(100, lte=1000),
     category_id: Optional[int] = None,
     task_id: Optional[int] = None,
+    category: Optional[str] = None,
+    task: Optional[str] = None,
     stopped: Optional[bool] = None,
     flags: Optional[list[str]] = Query(None),
     order: str = Query("desc", regex="^(asc|desc)$"),
     since: Optional[datetime] = None,
     until: Optional[datetime] = None,
 ):
+    if category is not None and category_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Use either category or category_id, not both"
+        )
+    if task is not None and task_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Use either task or task_id, not both"
+        )
+
     selector = select(Log)
     if category_id is not None:
         db_category = session.get(Category, category_id)
@@ -57,6 +70,21 @@ def get_logs(
         if not db_task:
             raise HTTPException(status_code=404, detail="Task not found")
         selector = selector.where(Log.task_id == task_id)
+    if category is not None:
+        db_category = session.exec(
+            select(Category)
+            .where(Category.name == category)
+        ).first()
+        if not db_category:
+            # raise HTTPException(status_code=404, detail="Category not found")
+            return []
+        selector = selector.where(Log.category_id == db_category.id)
+    if task is not None:
+        db_task = session.exec(select(Task).where(Task.name == task)).first()
+        if not db_task:
+            # raise HTTPException(status_code=404, detail="Task not found")
+            return []
+        selector = selector.where(Log.task_id == db_task.id)
     if stopped is not None:
         selector = selector.where(Log.stopped == stopped)
 
