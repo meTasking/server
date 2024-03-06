@@ -666,6 +666,9 @@ def update_log(
                         )
             db_log.task = db_task
         elif key == "flags":
+            for flag in db_log.flags:
+                session.delete(flag)
+
             if value is None:
                 db_log.flags = []
             else:
