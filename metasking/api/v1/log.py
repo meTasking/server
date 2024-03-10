@@ -42,6 +42,7 @@ def get_logs(
     task_id: Optional[int] = None,
     category: Optional[str] = None,
     task: Optional[str] = None,
+    description: Optional[str] = None,
     stopped: Optional[bool] = None,
     flags: Optional[list[str]] = Query(None),
     order: str = Query("desc", regex="^(asc|desc)$"),
@@ -89,6 +90,12 @@ def get_logs(
         selector = selector.where(Log.task_id == db_task.id)
     if stopped is not None:
         selector = selector.where(Log.stopped == stopped)
+
+    if description is not None:
+        for word in description.split():
+            selector = selector.where(
+                col(Log.description).ilike(f"%{word}%")
+            )
 
     if flags is not None and len(flags) > 0:
         # Mix in the flags
