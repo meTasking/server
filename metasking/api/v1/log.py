@@ -93,6 +93,8 @@ def get_logs(
 
     if description is not None:
         for word in description.split():
+            if len(word) == 0:
+                continue
             selector = selector.where(
                 col(Log.description).ilike(f"%{word}%")
             )
