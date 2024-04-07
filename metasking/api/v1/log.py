@@ -226,6 +226,15 @@ def next_log(
     result = session.exec(select_active_record())
     db_record = result.first()
     if db_record:
+        if db_record.start > request_time:
+            # Someone has shifted the time too much :D
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Cannot pause a record that has not " +
+                    "started yet (start is in the future)"
+                )
+            )
         db_record.end = request_time
         session.add(db_record)
         db_record.log.stopped = True
@@ -318,6 +327,15 @@ def stop_all_logs(
         resultR = session.exec(selectorR)
         db_records = resultR.all()
         for db_record in db_records:
+            if db_record.start > request_time:
+                # Someone has shifted the time too much :D
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Cannot pause a record that has not " +
+                        "started yet (start is in the future)"
+                    )
+                )
             db_record.end = request_time
             session.add(db_record)
         db_log.stopped = True
@@ -356,7 +374,16 @@ def stop_active_log(
     db_log.stopped = True
     session.add(db_log)
 
-    # Write the end time to the last record if the log is not already paused
+    # Write the end time to the last record
+    if db_record.start > request_time:
+        # Someone has shifted the time too much :D
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Cannot pause a record that has not " +
+                "started yet (start is in the future)"
+            )
+        )
     db_record.end = request_time
     session.add(db_record)
 
@@ -402,6 +429,15 @@ def stop_log(
     result = session.exec(selector)
     db_record = result.first()
     if db_record and not db_record.end:
+        if db_record.start > request_time:
+            # Someone has shifted the time too much :D
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Cannot pause a record that has not " +
+                    "started yet (start is in the future)"
+                )
+            )
         was_active = True
         db_record.end = request_time
         session.add(db_record)
@@ -436,6 +472,15 @@ def pause_active_log(
     if not db_record:
         raise HTTPException(status_code=404, detail="No active log found")
     db_log = db_record.log
+    if db_record.start > request_time:
+        # Someone has shifted the time too much :D
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Cannot pause a record that has not " +
+                "started yet (start is in the future)"
+            )
+        )
     db_record.end = request_time
     session.add(db_record)
     session.commit()
@@ -475,6 +520,15 @@ def pause_log(
     db_record = result.first()
     if not db_record or db_record.end:
         raise HTTPException(status_code=400, detail="Log already paused")
+    if db_record.start > request_time:
+        # Someone has shifted the time too much :D
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Cannot pause a record that has not " +
+                "started yet (start is in the future)"
+            )
+        )
     db_record.end = request_time
     session.add(db_record)
 

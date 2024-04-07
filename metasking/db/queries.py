@@ -21,6 +21,15 @@ def pause_all_logs(session: Session, request_time: datetime):
         .where(col(Record.end).is_(None))
     result = session.exec(selector)
     for db_record in result:
+        if db_record.start > request_time:
+            # Someone has shifted the time too much :D
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Cannot pause a record that has not " +
+                    "started yet (start is in the future)"
+                )
+            )
         db_record.end = request_time
         session.add(db_record)
 
