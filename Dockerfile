@@ -8,6 +8,7 @@ WORKDIR /usr/src/app
 ENV TZ=Europe/Prague
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
+ENV ROOT_PATH ""
 ENV DATABASE_URL "sqlite:////data/database.db"
 ENV READ_ONLY "false"
 

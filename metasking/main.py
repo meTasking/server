@@ -1,3 +1,4 @@
+import os
 import traceback
 
 from fastapi import FastAPI, Request, HTTPException, status
@@ -9,7 +10,8 @@ import metasking.model  # noqa: F401
 from metasking.api import api_router as api
 from metasking.model import ErrorModel
 
-app = FastAPI(title="meTasking")
+root_path = os.getenv("ROOT_PATH", "")
+app = FastAPI(title="meTasking", root_path=root_path)
 
 app.include_router(api, prefix="/api")
 
